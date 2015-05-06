@@ -109,7 +109,6 @@ SELECT * FROM tbl_with_dropped_toast;
 -- do reorg
 --
 \! pg_reorg --dbname=contrib_regression --no-order
-WARNING: skipping invalid index: CREATE UNIQUE INDEX idx_badindex_n ON tbl_badindex USING btree (n)
 INFO: ---- reorganize one table with 7 steps. ----
 INFO: target table name    : tbl_cluster
 INFO: ---- STEP1. setup ----
