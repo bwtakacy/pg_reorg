@@ -5,20 +5,18 @@
 
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
 <head>
-	<link rel="icon" type="image/png" href="http://pgfoundry.org/images/elephant-icon.png" />
+	<link rel="icon" type="image/png" href="https://wiki.postgresql.org/images/3/30/PostgreSQL_logo.3colors.120x120.png" />
 	<link rel="stylesheet" type="text/css" href="style.css" />
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 	<title>pg_reorg: Project Home Page</title>
 </head>
 
 <body>
-<center><img style="border: none; margin-left: auto; margin-right: auto; " src="http://pgfoundry.org/images/elephantSmall.png" height="75" width="75" />
+<center><img style="border: none; margin-left: auto; margin-right: auto; " src="https://wiki.postgresql.org/images/3/30/PostgreSQL_logo.3colors.120x120.png" height="75" width="75" />
 <hr />
 <h1>pg_reorg ホームページへようこそ</h1>
 <hr />
 </center>
-
-<p>このプロジェクトでは <strong>pg_reorg</strong> と <strong>pg_batch</strong> の2つのツールを頒布しています。</p>
 
 <p>
 <strong>pg_reorg</strong> は PostgreSQL のテーブルを再編成するシェルコマンドです。
@@ -26,18 +24,11 @@
 このモジュールは CLUSTER や VACUUM FULL コマンドのより良い代替になります。
 </p>
 
-<p>
-<strong>pg_batch</strong> は PostgreSQL のためのSQLジョブ実行プログラムです。
-ジョブ一覧生成するスクリプトを SQL として外部から与え、その出力 SQL をジョブとしてシリアルまたはパラレルに実行します。
-VACUUM を行うスクリプトが付属しており、"より良い vacuumdb" として利用できます。
+<p><a href="https://sourceforge.net/projects/pgreorg/">pg_reorg のプロジェクトページ</a>は現在Sourceforgeにあります。
 </p>
-
-<p>この pg_reorg プロジェクトは <a href="http://www.postgresql.org">PostgreSQL</a> コミュニティによる <a href="http://pgfoundry.org">pgFoundry</a> の中の<a href="http://pgfoundry.org/projects/reorg">プロジェクト</a>です。</p>
-<ul>
-	<li><a href="http://pgfoundry.org/frs/?group_id=1000411">ダウンロード</a> : ソースコードのほか、Windows 用バイナリもダウンロードできます。</li>
-	<li><a href="http://pgfoundry.org/tracker/?group_id=1000411">バグレポート</li></li>
-	<li><a href="http://pgfoundry.org/mail/?group_id=1000411">メーリングリスト</a> への参加</li>
-</ul>
+<p>
+古いプロジェクトページは、<a href="http://www.postgresql.org">PostgreSQL</a> コミュニティによる <a href="http://pgfoundry.org">pgFoundry</a> の中の<a href="http://pgfoundry.org/projects/reorg">プロジェクト</a>です。
+</p>
 <div>
 <a href="index.html">Here is an English page.</a>
 </div>
@@ -52,14 +43,12 @@ VACUUM を行うスクリプトが付属しており、"より良い vacuumdb" �
 
 <h2>実行時間</h2>
 <p>
-pg_reorg とclusterdb の比較に示します。
-断片化のないソートされた状態 (not fragmented) では clusterdb のほうが高速ですが、完全に断片化した状態 (fully fragmented) では pg_reorg が大幅に高速です。
-一般的に、再編成は断片化が進行した状態で実施されることを考えると、pg_reorg は clusterdb よりも実行時間が短いと言えます。
+pg_reorgの実行時間について検証結果を以下のグラフに示します。同じレコード数のテーブルに対して、断片化が発生していない場合と、断片化が発生して容量が2倍程度に肥大化している場合について複数回計測を行い、実行時間の平均値をグラフにしています。
 </p>
 
 <center>
 <div style="margin: 2em">
-<img src="result.png" />
+<img src="result_93.png" />
 </div>
 
 <table border="1">
@@ -72,48 +61,56 @@ pg_reorg とclusterdb の比較に示します。
 <tr>
 	<td rowspan="3">ハードウェア</td>
 	<td>CPU</td>
-	<td>2 × Xeon 5160 3.00GHz (Dual core)</td>
+	<td>Xeon E5645 2.4GHz (12 core) * 2</td>
 </tr>
 <tr>
 	<td>メモリ</td>
-	<td>2GB</td>
+	<td>32GB</td>
 </tr>
 <tr>
-	<td>ストレージ</td>
-	<td>Ultra320 SCSI, 15000rpm (220GB)</td>
+	<td>HDD</td>
+	<td>SAS 10,000rpm 2TB * 4</td>
 </tr>
 <tr>
-	<td rowspan="4">ソフトウェア</td>
+	<td rowspan="3">ソフトウェア</td>
 	<td>OS</td>
-	<td>RHEL 5.2 (64bit) 2.6.18-92.el5</td>
+	<td>RHEL 6.2 (64bit)</td>
 </tr>
 <tr>
 	<td>DB</td>
-	<td>PostgreSQL 8.3.3</td>
+	<td>PostgreSQL 9.3.4</td>
 </tr>
 <tr>
 	<td>pg_reorg</td>
-	<td>1.0.0</td>
+	<td>1.1.10</td>
 </tr>
 <tr>
-	<td>clusterdb</td>
-	<td>clusterdb (PostgreSQL) 8.3.3</td>
-</tr>
-<tr>
-	<td rowspan="2">データ</td>
+	<td>データ</td>
 	<td>スキーマ</td>
-	<td><code><pre>CREATE TABLE tbl (
- id bigserial PRIMARY KEY,
- seqkey timestamp NOT NULL,
- rndkey timestamp NOT NULL,
- filler char(75) NOT NULL
+	<td><code><pre>
+CREATE TABLE test (
+ id bigserial,
+ rndkey bigint NOT NULL,
+ dummy1 bigint NOT NULL,
+ dummy2 bigint NOT NULL,
+ dummy3 bigint NOT NULL,
+ dummy4 bigint NOT NULL,
+ dummy5 bigint NOT NULL,
+ dummy6 bigint NOT NULL,
+ dummy7 bigint NOT NULL,
+ dummy8 timestamp NOT NULL,
+ dummy9 timestamp NOT NULL,
+ dummy10 timestamp NOT NULL,
+ dummy11 timestamp NOT NULL,
+ dummy12 timestamp NOT NULL,
+ dummy13 timestamp NOT NULL,
+ dummy14 timestamp NOT NULL,
+ filler char(128) NOT NULL
 );
-CREATE INDEX idx_seq ON tbl (seqkey);
-CREATE INDEX idx_rnd ON tbl (rndkey);</pre></code></td>
-</tr>
-<tr>
-	<td>件数</td>
-	<td>1650万件 (約2GB)</td>
+
+CREATE INDEX test_idx_rndkey ON test (rndkey);
+ALTER TABLE test CLUSTER ON test_idx_rndkey;
+    </pre></code></td>
 </tr>
 </table>
 
@@ -122,8 +119,7 @@ CREATE INDEX idx_rnd ON tbl (rndkey);</pre></code></td>
 
 <hr />
 <p class="footer">
-Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION<br />
-Portions Copyright (c) 2011, Itagaki Takahiro
+Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION<br />
 </p>
 
 <script type="text/javascript">

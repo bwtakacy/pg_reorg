@@ -8,7 +8,7 @@
 </head>
 
 <body>
-<h1 id="pg_reorg">pg_reorg 1.1.7</h1>
+<h1 id="pg_reorg">pg_reorg 1.1.13</h1>
 <div class="navigation">
   <a href="index.html">Top</a> &gt;
   <a href="pg_reorg.html">pg_reorg</a>
@@ -204,6 +204,8 @@ The default is INFO.</dd>
 The following list shows the cause of errors.</p>
 <p>You need to cleanup by hand after fatal errors.
 To cleanup, execute $PGHOME/share/contrib/uninstall_pg_reorg.sql to the database where the error occured and then execute $PGHOME/share/contrib/pg_reorg.sql. (Do uninstall and reinstall.)</p>
+<p>From PostgreSQL 9.2, you can also use 'DROP EXTENSION pg_reorg CASCADE;' and then 'CREATE EXTENSION pg_reorg;' to cleanup.</p>
+
 
 <dl>
 <dt>pg_reorg : reorg database "template1" ... skipped</dt>
@@ -294,13 +296,21 @@ There are project files in the msvc folder.
 <pre>$ pg_ctl start
 $ psql -f $PGSHARE/contrib/pg_reorg.sql -d your_database</pre>
 
-<p>(NOTE: <code>CREATE EXTENSION</code> is not supported yet.)</p>
+<p>You can also use CREATE EXTENSION.</p>
+<pre>
+$ psql -c "CREATE EXTENSION pg_reorg" -d your_database</pre>
+
+<p>
+If you want to check regression tests, do the below commands with PostgreSQL server running
+</p>
+<pre>$ make installcheck
+</pre>
 
 <h2 id="requirement">Requirements</h2>
 <dl>
 <dt>PostgreSQL versions</dt>
-<dd>PostgreSQL 8.2, 8.3, 8.4, 9.0, 9.1, 9.2</dd>
-<dt>OS</dt><dd>RHEL 5.2, Windows XP SP3</dd>
+<dd>PostgreSQL 9.0, 9.1, 9.2, 9.3, 9.4</dd>
+<dt>OS</dt><dd>RHEL 6/7</dd>
 <dt>Disks</dt><dd>Requires free disk space twice as large as the target
 table(s) and indexes. For example, if the total size of the tables and
 indexes to be reorganized is 1GB, an additional 2GB of disk space is
@@ -309,6 +319,30 @@ required.</dd>
 
 <h2 id="releases">Releases</h2>
 <ul>
+<li>1.1.13 (2015-04-17)<ul>
+	<li>Fix process crash when run pg_reorg 1.1.11 after on PostgreSQL 9.4 with pg_statsinfo 3.0.2.</li>
+</ul></li>
+<li>1.1.12 (2015-03-16)<ul>
+	<li>Drop supporting PostgreSQL 8.2, 8.3, 8.4.</li>
+    <li>Fix failure to skip database where pg_reorg is not installed in pg_reorg --all.</li>
+    <li>Fix unsafe handling of TOAST indexes on PostgreSQL 9.4.</li>
+</ul></li>
+<li>1.1.11 (2015-01-07)<ul>
+	<li>Supports PostgreSQL 9.4</li>
+	<li>Change not to wait for transactions in different databases.</li>
+	<li>Support for DESC, NULLS FIRST/LAST, COLLATE to index keys.</li>
+</ul></li>
+<li>1.1.10 (2014-05-09)<ul>
+	<li>Bugfix: There was a rare possibility for data lost in doing pg_reorg during heavily online requests.</li>
+	<li>Modify output messages to show the taget table name and steps with INFO messages.</li>
+</ul></li>
+<li>1.1.9 (2013-11-21)<ul>
+	<li>Supports PostgreSQL 9.3</li>
+</ul></li>
+<li>1.1.8 (2012-12-07)<ul>
+	<li>Supports PostgreSQL 9.2</li>
+	<li>Supports CREATE EXTENSION to install</li>
+</ul></li>
 <li>1.1.7 (2011-08-07)<ul>
 	<li>Bugfix: VIEWs and FUNCTIONs could be corrupted that used a reorganized table which has a dropped column.</li>
 	<li>Supports PostgreSQL 9.1 and 9.2dev. (but EXTENSION is not yet)</li>
@@ -327,8 +361,8 @@ required.</dd>
 
 <div>
 <p class="footer">
-Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION<br>
-Portions Copyright (c) 2011, Itagaki Takahiro
+Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION<br>
+Portions Copyright (c) 2015, Takashi Ohnishi
 </p>
 </div>
 

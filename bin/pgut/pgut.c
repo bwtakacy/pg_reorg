@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  * pgut.c
  *
- * Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2011, Itagaki Takahiro
  *-------------------------------------------------------------------------
  */
@@ -790,10 +790,12 @@ elog(int elevel, const char *fmt, ...)
 	do
 	{
 		va_start(args, fmt);
-		ok = appendStringInfoVA(&edata->msg, fmt, args);
+		ok = appendStringInfoVA_c(&edata->msg, fmt, args);
 		va_end(args);
 	} while (!ok);
+
 	len = strlen(fmt);
+
 	if (len > 2 && strcmp(fmt + len - 2, ": ") == 0)
 		appendStringInfoString(&edata->msg, strerror(edata->save_errno));
 	trimStringBuffer(&edata->msg);
@@ -955,9 +957,10 @@ errmsg(const char *fmt,...)
 	do
 	{
 		va_start(args, fmt);
-		ok = appendStringInfoVA(&edata->msg, fmt, args);
+		ok = appendStringInfoVA_c(&edata->msg, fmt, args);
 		va_end(args);
 	} while (!ok);
+
 	len = strlen(fmt);
 	if (len > 2 && strcmp(fmt + len - 2, ": ") == 0)
 		appendStringInfoString(&edata->msg, strerror(edata->save_errno));
@@ -976,9 +979,10 @@ errdetail(const char *fmt,...)
 	do
 	{
 		va_start(args, fmt);
-		ok = appendStringInfoVA(&edata->detail, fmt, args);
+		ok = appendStringInfoVA_c(&edata->detail, fmt, args);
 		va_end(args);
 	} while (!ok);
+
 	trimStringBuffer(&edata->detail);
 
 	return 0;	/* return value does not matter */
@@ -1159,10 +1163,16 @@ exit_or_abort(int exitcode)
 }
 
 /*
- * unlike the server code, this function automatically extend the buffer.
+ * appendStringInfoVA_c - appendStringInfoVA + automatic buffer extension
+ *
+ * Note:
+ * This is a client-side function (part of pg_reorg binary). There exists
+ * a similar function on the server side, too. To avoid confusion in
+ * function names, this has been named with the suffix "_c" and server-
+ * side function uses the suffix "_s" in its name.
  */
 bool
-appendStringInfoVA(StringInfo str, const char *fmt, va_list args)
+appendStringInfoVA_c(StringInfo str, const char *fmt, va_list args)
 {
 	size_t		avail;
 	int			nprinted;

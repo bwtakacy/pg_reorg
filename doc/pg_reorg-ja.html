@@ -8,7 +8,7 @@
 </head>
 
 <body>
-<h1 id="pg_reorg">pg_reorg 1.1.7</h1>
+<h1 id="pg_reorg">pg_reorg 1.1.13</h1>
 <div class="navigation">
   <a href="index-ja.html">Top</a> &gt;
   <a href="pg_reorg-ja.html">pg_reorg</a>
@@ -214,6 +214,7 @@ DEBUG, INFO, NOTICE, WARNING, ERROR, LOG, FATAL, PANIC から選択します。
 想像されるエラー原因と対処を示します。</p>
 <p>致命的なエラーで終了した場合、手動によるクリーンアップを行う必要があります。
 クリーンアップは、エラーが発生したデータベースに対して、$PGHOME/share/contrib/uninstall_pg_reorg.sql を実行し、その後、$PGHOME/share/contrib/pg_reorg.sql を実行します。</p>
+<p>PostgreSQL 9.2 以降では、エラーが発生したデータベースに接続し、DROP EXTENSION pg_reorg CASCADE を実行し、その後、CREATE EXTENSION pg_reorg を実行することでもクリーンアップが可能です。</p>
 
 <dl>
 <dt>pg_reorg : reorg database "template1" ... skipped</dt>
@@ -307,24 +308,70 @@ msvc フォルダ内にプロジェクトファイルがあります。
 <pre>$ pg_ctl start
 $ psql -f $PGSHARE/contrib/pg_reorg.sql -d your_database</pre>
 
-<p>(注意: <code>CREATE EXTENSION</code> はまだサポートしていません。)</p>
+<p>9.2以降ではCREATE EXTENSIONによる登録も可能です。</p>
+<pre>
+$ psql -c "CREATE EXTENSION pg_reorg" -d your_database</pre>
+
+<p>
+リグレッションテストを行うには、PostgreSQLサーバを動作させた上で、下記コマンドを実行します。
+</p>
+<pre>$ make installcheck
+</pre>
 
 <h2 id="requirement">動作環境</h2>
 <dl>
 <dt>PostgreSQLバージョン</dt>
-<dd>PostgreSQL 8.2, 8.3, 8.4, 9.0, 9.1, 9.2</dd>
+<dd>PostgreSQL 9.0, 9.1, 9.2, 9.3, 9.4</dd>
 <dt>OS</dt>
-<dd>RHEL 5.2, Windows XP SP3</dd>
+<dd>RHEL 6/7</dd>
 <dt>ディスク容量</dt>
 <dd>処理対象のテーブル、インデックスサイズの2倍以上のディスク空き容量 (対象が1GBならば、さらに追加で2GB)</dd>
 </dl>
 
 <h2 id="releases">更新履歴</h2>
 <ul>
-<li>1.1.7 (2011-08-07)<ul>
-	<li>バグ修正: DROPされた列を持つテーブルを再編成した場合に、そのテーブルを使用するビューや関数が破損する可能性があった。</li>
-	<li>PostgreSQL 9.1, 9.2dev のサポート (EXTENSION はまだ)</li>
-</ul></li>
+<li>1.1.13 (2015-04-17)
+	<ul>
+		<li>pg_statsinfo 3.0.2を動作させているPostgreSQL 9.4環境において、pg_reorg 1.1.11以降を実施するとPostgreSQLプロセスがクラッシュする不具合がありました。 </li>
+	</ul>
+</li>
+<li>1.1.12 (2015-03-16)
+	<ul>
+		<li>PostgreSQL 8.2, 8.3, 8.4のサポートを打ち切りました。</li>
+		<li>--allオプションを指定した際に、pg_reorgがインストールされていないデータベースをスキップする機能が動作しない不具合がありました。</li>
+        <li>PostgreSQL 9.4におけるTOASTされたテーブルのインデックスの扱いが安全ではありませんでした。これにより指定したインデックスを用いた再編成が実現できない可能性がありました。</li>
+	</ul>
+</li>
+<li>1.1.11 (2015-01-07)
+	<ul>
+		<li>PostgreSQL 9.4のサポート</li>
+		<li>再編成完了直前に対象テーブルの存在するデータベース<b>以外</b>におけるトランザクション終了を待たないようにしました。</li>
+        <li>DESC, NULLS FIRST/LAST, COLLATEを用いたインデックスを再編成に使用できるようにしました。(pg_repack issue#3)</li>
+	</ul>
+</li>
+<li>1.1.10 (2014-05-09)
+	<ul>
+		<li>バグ修正：オンラインリクエストが高負荷な状態でpg_reorgを実行した際に、再編中に実施されたオンラインからの更新レコードの一部が再編成後のテーブルに反映されないことが非常にまれに起きる可能性がありました。</li>
+		<li>実行時の出力メッセージを見直し、対象テーブルや実行している処理についてINFOで出力するようにしました。</li>
+	</ul>
+</li>
+<li>1.1.9 (2013-11-21)
+	<ul>
+		<li>PostgreSQL 9.3のサポート</li>
+	</ul>
+</li>
+<li>1.1.8 (2012-12-07)
+	<ul>
+		<li>PostgreSQL 9.2のサポート</li>
+		<li>CREATE EXTENSIONでのインストールをサポート</li>
+	</ul>
+</li>
+<li>1.1.7 (2011-08-07)
+	<ul>
+		<li>バグ修正: DROPされた列を持つテーブルを再編成した場合に、そのテーブルを使用するビューや関数が破損する可能性がありました。</li>
+		<li>PostgreSQL 9.1, 9.2dev のサポート (EXTENSION はまだ)</li>
+	</ul>
+</li>
 </ul>
 
 <h2 id="seealso">関連項目</h2>
@@ -337,8 +384,8 @@ $ psql -f $PGSHARE/contrib/pg_reorg.sql -d your_database</pre>
   <a href="pg_reorg-ja.html">pg_reorg</a>
 </div>
 <p class="footer">
-Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION<br>
-Portions Copyright (c) 2011, Itagaki Takahiro
+Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION<br>
+Portions Copyright (c) 2015, Takashi Ohnishi
 </p>
 
 <script type="text/javascript">

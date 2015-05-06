@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  * pgut.h
  *
- * Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2011, Itagaki Takahiro
  *-------------------------------------------------------------------------
  */
@@ -38,7 +38,7 @@ typedef void (*pgut_atexit_callback)(bool fatal, void *userdata);
 extern const char  *PROGRAM_NAME;
 extern const char  *PROGRAM_VERSION;
 extern const char  *PROGRAM_URL;
-extern const char  *PROGRAM_EMAIL;
+extern const char  *PROGRAM_ISSUES;
 
 /*
  * pgut framework variables and functions
@@ -149,7 +149,7 @@ extern void CHECK_FOR_INTERRUPTS(void);
 #define appendStringInfoChar	appendPQExpBufferChar
 #define appendBinaryStringInfo	appendBinaryPQExpBuffer
 
-extern bool appendStringInfoVA(StringInfo str, const char *fmt, va_list args)
+extern bool appendStringInfoVA_c(StringInfo str, const char *fmt, va_list args)
 __attribute__((format(printf, 2, 0)));
 extern int appendStringInfoFile(StringInfo str, FILE *fp);
 extern int appendStringInfoFd(StringInfo str, int fd);

@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  * pgut-spi.c
  *
- * Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2011, Itagaki Takahiro
  *-------------------------------------------------------------------------
  */
@@ -24,15 +24,32 @@ termStringInfo(StringInfo str)
 		pfree(str->data);
 }
 
-/* appendStringInfoVA + automatic buffer extension */
+/*
+ * appendStringInfoVA_s - appendStringInfoVA + buffer extension
+ *
+ * Note:
+ * This is a server-side function (part of pg_reorg.so). There exists
+ * a similar function on the client side, too. To avoid confusion in
+ * function names, this has been named with the suffix "_s" and client-
+ * side function uses the suffix "_c" in its name.
+ */
 static void
 appendStringInfoVA_s(StringInfo str, const char *fmt, va_list args)
 {
+#if PG_VERSION_NUM >= 90400
+	int needed;
+	while ((needed = appendStringInfoVA(str, fmt, args)) > 0)
+	{
+		/* Double the buffer size and try again. */
+		enlargeStringInfo(str, needed);
+	}
+#else
 	while (!appendStringInfoVA(str, fmt, args))
 	{
 		/* Double the buffer size and try again. */
 		enlargeStringInfo(str, str->maxlen);
 	}
+#endif
 }
 
 /* simple execute */

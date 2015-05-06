@@ -1,7 +1,7 @@
 /*
  * pg_reorg.c: bin/pg_reorg.c
  *
- * Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2011, Itagaki Takahiro
  */
 
@@ -9,9 +9,9 @@
  * @brief Client Modules
  */
 
-const char *PROGRAM_VERSION	= "1.1.7";
-const char *PROGRAM_URL		= "http://reorg.projects.postgresql.org/";
-const char *PROGRAM_EMAIL	= "reorg-general@lists.pgfoundry.org";
+const char *PROGRAM_VERSION	= "1.1.13";
+const char *PROGRAM_URL		= "http://sourceforge.net/projects/pgreorg/";
+const char *PROGRAM_ISSUES		= "http://sourceforge.net/p/pgreorg/tickets/";
 
 #include "pgut/pgut-fe.h"
 
@@ -26,9 +26,59 @@ const char *PROGRAM_EMAIL	= "reorg-general@lists.pgfoundry.org";
  */
 #define APPLY_COUNT		1000
 
-/* The '1/1, -1/0' lock skipped is from the bgwriter on newly promoted
- * servers. See GH ticket #1.
+/*
+ * The SQLs SQL_XID_SNAPSHOT_* are used to obtain a list of virtual
+ * transaction ids or transaction ids which is later used in SQLs
+ * SQL_XID_ALIVE_* (see below) for waiting on them to finish.
+ *
+ * SQL_XID_SNAPSHOT_* select only those virtual transaction ids or
+ * transaction ids which are being executed in a session connected
+ * to the database to which pg_reorg is also connected. Previously,
+ * pg_reorg would wait for transactions related to objects of 
+ * different databases.
+ *
+ * NOTE: The '1/1, -1/0' lock skipped is from the bgwriter on newly
+ * promoted servers. See GH ticket #1.
  */
+
+#define SQL_XID_SNAPSHOT_80300 \
+	"SELECT"\
+		" reorg.array_accum(virtualtransaction)"\
+	" FROM pg_locks l"\
+		" JOIN pg_database d"\
+		" ON d.oid=l.database"\
+		" AND d.datname=current_database()"\
+	" WHERE"\
+		" pid <> pg_backend_pid()"\
+		" AND (virtualxid, virtualtransaction) <> ('1/1', '-1/0')"
+#define SQL_XID_SNAPSHOT_80200 \
+	"SELECT"\
+		" reorg.array_accum(transactionid)"\
+	" FROM pg_locks l"\
+		" JOIN pg_stat_activity s"\
+		" ON s.pid=l.pid"\
+	" WHERE"\
+		" locktype = 'transactionid'"\
+		" AND pid <> pg_backend_pid()"\
+		" AND s.datname=current_database()"
+
+#define SQL_XID_ALIVE_80300 \
+	"SELECT"\
+		" pid"\
+	" FROM pg_locks"\
+	" WHERE"\
+	" locktype = 'virtualxid'"\
+		" AND pid <> pg_backend_pid()"\
+		" AND virtualtransaction = ANY($1)"
+#define SQL_XID_ALIVE_80200 \
+	"SELECT"\
+		" pid"\
+	" FROM pg_locks"\
+	" WHERE"\
+		" locktype = 'transactionid'"\
+		" AND pid <> pg_backend_pid()"\
+		" AND transactionid = ANY($1)"
+
 #define SQL_XID_SNAPSHOT \
 	"SELECT reorg.array_accum(virtualtransaction) FROM pg_locks"\
 	" WHERE locktype = 'virtualxid' AND pid <> pg_backend_pid()"\
@@ -83,6 +133,7 @@ static Oid getoid(PGresult *res, int row, int col);
 static void lock_exclusive(const char *relid, const char *lock_query);
 
 #define SQLSTATE_INVALID_SCHEMA_NAME	"3F000"
+#define SQLSTATE_UNDEFINED_TABLE		"42P01"
 #define SQLSTATE_QUERY_CANCELED			"57014"
 
 static bool sqlstate_equals(PGresult *res, const char *state)
@@ -174,7 +225,7 @@ reorg_all_databases(const char *orderby)
 
 		if (pgut_log_level >= INFO)
 		{
-			printf("%s: reorg database \"%s\"", PROGRAM_NAME, dbname);
+			printf("%s: reorg database \"%s\" \n", PROGRAM_NAME, dbname);
 			fflush(stdout);
 		}
 
@@ -254,7 +305,11 @@ reorg_one_database(const char *orderby, const char *table)
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
+#if PG_VERSION_NUM < 90300
 		if (sqlstate_equals(res, SQLSTATE_INVALID_SCHEMA_NAME))
+#else
+		if (sqlstate_equals(res, SQLSTATE_UNDEFINED_TABLE))
+#endif
 		{
 			/* Schema reorg does not exist. Skip the database. */
 			ret = false;
@@ -380,8 +435,13 @@ reorg_one_table(const reorg_table *table, const char *orderby)
 
 	initStringInfo(&sql);
 
-	elog(DEBUG2, "---- reorg_one_table ----");
-	elog(DEBUG2, "target_name    : %s", table->target_name);
+	if(analyze) {
+		elog(INFO, "---- reorganize one table with 7 steps. ----");
+	} else {
+		elog(INFO, "---- reorganize one table with 6 steps. ----");
+	}
+		
+	elog(INFO, "target table name    : %s", table->target_name);
 	elog(DEBUG2, "target_oid     : %u", table->target_oid);
 	elog(DEBUG2, "target_toast   : %u", table->target_toast);
 	elog(DEBUG2, "target_tidx    : %u", table->target_tidx);
@@ -404,7 +464,8 @@ reorg_one_table(const reorg_table *table, const char *orderby)
 	/*
 	 * 1. Setup workspaces and a trigger.
 	 */
-	elog(DEBUG2, "---- setup ----");
+	elog(INFO, "---- STEP1. setup ----");
+	elog(INFO, "This needs EXCLUSIVE LOCK against the target table.");
 	lock_exclusive(utoa(table->target_oid, buffer), table->lock_table);
 
 	/*
@@ -439,7 +500,7 @@ reorg_one_table(const reorg_table *table, const char *orderby)
 	/*
 	 * 2. Copy tuples into temp table.
 	 */
-	elog(DEBUG2, "---- copy tuples ----");
+	elog(INFO, "---- STEP2. copy tuples into temp table----");
 
 	command("BEGIN ISOLATION LEVEL SERIALIZABLE", 0, NULL);
 	/* SET work_mem = maintenance_work_mem */
@@ -460,7 +521,7 @@ reorg_one_table(const reorg_table *table, const char *orderby)
 	/*
 	 * 3. Create indexes on temp table.
 	 */
-	elog(DEBUG2, "---- create indexes ----");
+	elog(INFO, "---- STEP3. create indexes ----");
 
 	params[0] = utoa(table->target_oid, buffer);
 	res = execute("SELECT indexrelid,"
@@ -503,6 +564,7 @@ reorg_one_table(const reorg_table *table, const char *orderby)
 	 * 4. Apply log to temp table until no tuples are left in the log
 	 * and all of the old transactions are finished.
 	 */
+	elog(INFO, "---- STEP4. apply logs  ----");
 	for (;;)
 	{
 		num = apply_log(table, APPLY_COUNT);
@@ -544,7 +606,8 @@ reorg_one_table(const reorg_table *table, const char *orderby)
 	/*
 	 * 5. Swap.
 	 */
-	elog(DEBUG2, "---- swap ----");
+	elog(INFO, "---- STEP5. swap tables ----");
+	elog(INFO, "This needs EXCLUSIVE LOCK against the target table. ");
 	lock_exclusive(utoa(table->target_oid, buffer), table->lock_table);
 	apply_log(table, 0);
 	params[0] = utoa(table->target_oid, buffer);
@@ -554,7 +617,7 @@ reorg_one_table(const reorg_table *table, const char *orderby)
 	/*
 	 * 6. Drop.
 	 */
-	elog(DEBUG2, "---- drop ----");
+	elog(INFO, "---- STEP6. drop old table----");
 
 	command("BEGIN ISOLATION LEVEL READ COMMITTED", 0, NULL);
 	params[0] = utoa(table->target_oid, buffer);
@@ -571,7 +634,7 @@ reorg_one_table(const reorg_table *table, const char *orderby)
 	 */
 	if (analyze)
 	{
-		elog(DEBUG2, "---- analyze ----");
+		elog(INFO, "---- STEP7. analyze ----");
 
 		command("BEGIN ISOLATION LEVEL READ COMMITTED", 0, NULL);
 		printfStringInfo(&sql, "ANALYZE %s", table->target_name);

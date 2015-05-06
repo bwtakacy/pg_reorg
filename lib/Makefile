@@ -1,11 +1,15 @@
 #
 # pg_reorg: lib/Makefile
 #
-#  Portions Copyright (c) 2008-2012, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+#  Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
 #  Portions Copyright (c) 2011, Itagaki Takahiro
 #
 MODULE_big = pg_reorg
 OBJS = reorg.o pgut/pgut-be.o pgut/pgut-spi.o
+
+# Handle to which function to be published from this shared library.
+# See src/Makefile.shlib in PostgreSQL.
+SHLIB_EXPORTS = exports.txt
 
 EXTENSION = pg_reorg
 
@@ -42,9 +46,9 @@ LIBS := $(filter-out -lxml2, $(LIBS))
 LIBS := $(filter-out -lxslt, $(LIBS))
 
 pg_reorg.sql: pg_reorg.sql.in
-	echo "BEGIN;\n" > $@; \
+	echo "BEGIN;" > $@; \
 	sed 's,MODULE_PATHNAME,$$libdir/$(MODULE_big),g' $< >> $@; \
-	echo "\nCOMMIT;" >> $@;
+	echo "COMMIT;" >> $@;
 
 pg_reorg--$(EXTVER).sql: pg_reorg.sql.in
 	echo '\echo Use "CREATE EXTENSION pg_reorg" to load this file. \quit' > $@; \

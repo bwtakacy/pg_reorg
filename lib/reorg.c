@@ -1,7 +1,7 @@
 /*
  * pg_reorg: lib/reorg.c
  *
- * Portions Copyright (c) 2008-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2008-2015, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2011, Itagaki Takahiro
  */
 
@@ -40,7 +40,7 @@ PG_MODULE_MAGIC;
 extern Datum PGUT_EXPORT reorg_version(PG_FUNCTION_ARGS);
 extern Datum PGUT_EXPORT reorg_trigger(PG_FUNCTION_ARGS);
 extern Datum PGUT_EXPORT reorg_apply(PG_FUNCTION_ARGS);
-extern Datum PGUT_EXPORT reorg_get_index_keys(PG_FUNCTION_ARGS);
+extern Datum PGUT_EXPORT reorg_get_order_by(PG_FUNCTION_ARGS);
 extern Datum PGUT_EXPORT reorg_indexdef(PG_FUNCTION_ARGS);
 extern Datum PGUT_EXPORT reorg_swap(PG_FUNCTION_ARGS);
 extern Datum PGUT_EXPORT reorg_drop(PG_FUNCTION_ARGS);
@@ -49,7 +49,7 @@ extern Datum PGUT_EXPORT reorg_disable_autovacuum(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(reorg_version);
 PG_FUNCTION_INFO_V1(reorg_trigger);
 PG_FUNCTION_INFO_V1(reorg_apply);
-PG_FUNCTION_INFO_V1(reorg_get_index_keys);
+PG_FUNCTION_INFO_V1(reorg_get_order_by);
 PG_FUNCTION_INFO_V1(reorg_indexdef);
 PG_FUNCTION_INFO_V1(reorg_swap);
 PG_FUNCTION_INFO_V1(reorg_drop);
@@ -84,10 +84,10 @@ static void RenameRelationInternal(Oid myrelid, const char *newrelname, Oid name
 #endif
 
 
-/* The API of RenameRelationInternal() was changed in 9.2.
+/* The API of RenameRelationInternal() was changed only in 9.2.
  * Use the RENAME_REL macro for compatibility across versions.
  */
-#if PG_VERSION_NUM < 90200
+#if (PG_VERSION_NUM < 90200) || (PG_VERSION_NUM >= 90300)
 #define RENAME_REL(relid, newrelname) RenameRelationInternal(relid, newrelname, PG_TOAST_NAMESPACE);
 #else
 #define RENAME_REL(relid, newrelname) RenameRelationInternal(relid, newrelname);
@@ -97,7 +97,7 @@ static void RenameRelationInternal(Oid myrelid, const char *newrelname, Oid name
 Datum
 reorg_version(PG_FUNCTION_ARGS)
 {
-	return CStringGetTextDatum("pg_reorg 1.1.6");
+	return CStringGetTextDatum("pg_reorg 1.1.13");
 }
 
 /**
@@ -269,12 +269,11 @@ reorg_apply(PG_FUNCTION_ARGS)
 					plan_update = reorg_prepare(sql_update, 2, &argtypes[1]);
 				execute_plan(SPI_OK_UPDATE, plan_update, &values[1], &nulls[1]);
 			}
+			/* delete the log record already treated into the target table */
+			if (plan_pop == NULL)
+				plan_pop = reorg_prepare(sql_pop, 1, argtypes);
+			execute_plan(SPI_OK_DELETE, plan_pop, values, nulls);
 		}
-
-		/* delete tuple in log */
-		if (plan_pop == NULL)
-			plan_pop = reorg_prepare(sql_pop, 1, argtypes);
-		execute_plan(SPI_OK_DELETE, plan_pop, values, nulls);
 
 		SPI_freetuptable(tuptable);
 	}
@@ -463,21 +462,51 @@ parse_indexdef(IndexDef *stmt, Oid index, Oid table)
 	stmt->options = sql;
 }
 
+/*
+ * Parse the trailing ... [ COLLATE X ] [ DESC ] [ NULLS { FIRST | LAST } ] from an index
+ * definition column.
+ * Returned values point to token. \0's are inserted to separate parsed parts.
+ */
+static void
+parse_indexdef_col(char *token, char **desc, char **nulls, char **collate)
+{
+	char *pos;
+
+	/* easier to walk backwards than to parse quotes and escapes... */
+	if (NULL != (pos = strstr(token, " NULLS FIRST")))
+	{
+		*nulls = pos + 1;
+		*pos = '\0';
+	}
+	else if (NULL != (pos = strstr(token, " NULLS LAST")))
+	{
+		*nulls = pos + 1;
+		*pos = '\0';
+	}
+	if (NULL != (pos = strstr(token, " DESC")))
+	{
+		*desc = pos + 1;
+		*pos = '\0';
+	}
+	if (NULL != (pos = strstr(token, " COLLATE ")))
+	{
+		*collate = pos + 1;
+		*pos = '\0';
+	}
+}
+
 /**
- * @fn      Datum reorg_get_index_keys(PG_FUNCTION_ARGS)
+ * @fn      Datum reorg_get_order_by(PG_FUNCTION_ARGS)
  * @brief   Get key definition of the index.
  *
- * reorg_get_index_keys(index, table)
+ * reorg_get_order_by(index, table)
  *
  * @param	index	Oid of target index.
  * @param	table	Oid of table of the index.
  * @retval			Create index DDL for temp table.
- *
- * FIXME: this function is named get_index_keys, but actually returns
- * an expression for ORDER BY clause. get_order_by() might be a better name.
  */
 Datum
-reorg_get_index_keys(PG_FUNCTION_ARGS)
+reorg_get_order_by(PG_FUNCTION_ARGS)
 {
 	Oid				index = PG_GETARG_OID(0);
 	Oid				table = PG_GETARG_OID(1);
@@ -488,6 +517,18 @@ reorg_get_index_keys(PG_FUNCTION_ARGS)
 	Relation		indexRel = NULL;
 	int				nattr;
 
+	/*
+	 * NOTE: parse_indexdef() calls server-internal pg_get_indexdef_string()
+	 * to get the decompiled index definition and parses it to fill the
+	 * IndexDef struct (stmt).
+	 *
+	 * Be careful to make related changes here or/and in parse_indexdef()
+	 * or/and in parse_indexdef_col() to account for any changes that might
+	 * occur in the index definition across server versions or otherwise.
+	 *
+	 * For example, please see issue #3 on pg_repack github page (now closed).
+	 * 	https://github.com/reorg/pg_repack/issues/3
+	 */
 	parse_indexdef(&stmt, index, table);
 	elog(DEBUG2, "indexdef.create  = %s", stmt.create);
 	elog(DEBUG2, "indexdef.index   = %s", stmt.index);
@@ -496,21 +537,25 @@ reorg_get_index_keys(PG_FUNCTION_ARGS)
 	elog(DEBUG2, "indexdef.columns = %s", stmt.columns);
 	elog(DEBUG2, "indexdef.options = %s", stmt.options);
 
-	/*
-	 * FIXME: this is very unreliable implementation but I don't want to
-	 * re-implement customized versions of pg_get_indexdef_string...
-	 */
-
 	initStringInfo(&str);
 	for (nattr = 0, next = stmt.columns; next; nattr++)
 	{
 		char *opcname;
+		char *coldesc = NULL;
+		char *colnulls = NULL;
+		char *colcollate = NULL;
 
 		token = next;
 		while (isspace((unsigned char) *token))
 			token++;
 		next = skip_until(index, next, ',');
+		parse_indexdef_col(token, &coldesc, &colnulls, &colcollate);
 		opcname = skip_until(index, token, ' ');
+		appendStringInfoString(&str, token);
+		if (colcollate)
+			appendStringInfo(&str, " %s", colcollate);
+		if (coldesc)
+			appendStringInfo(&str, " %s", coldesc);
 		if (opcname)
 		{
 			/* lookup default operator name from operator class */
@@ -547,12 +592,11 @@ reorg_get_index_keys(PG_FUNCTION_ARGS)
 				elog(ERROR, "missing operator %d(%u,%u) in opfamily %u",
 					 strategy, opcintype, opcintype, opfamily);
 
-
 			opcname[-1] = '\0';
-			appendStringInfo(&str, "%s USING %s", token, get_opname(oprid));
+			appendStringInfo(&str, " USING %s", get_opname(oprid));
 		}
-		else
-			appendStringInfoString(&str, token);
+		if (colnulls)
+			appendStringInfo(&str, " %s", colnulls);
 		if (next)
 			appendStringInfoString(&str, ", ");
 	}
@@ -641,12 +685,12 @@ reorg_swap(PG_FUNCTION_ARGS)
 	/* swap relfilenode and dependencies for tables. */
 	values[0] = ObjectIdGetDatum(oid);
 	execute_with_args(SPI_OK_SELECT,
-		"SELECT X.reltoastrelid, TX.reltoastidxid, X.relowner,"
-		"       Y.oid, Y.reltoastrelid, TY.reltoastidxid, Y.relowner"
-		"  FROM pg_catalog.pg_class X LEFT JOIN pg_catalog.pg_class TX"
-		"         ON X.reltoastrelid = TX.oid,"
-		"       pg_catalog.pg_class Y LEFT JOIN pg_catalog.pg_class TY"
-		"         ON Y.reltoastrelid = TY.oid"
+		"SELECT X.reltoastrelid, TX.indexrelid, X.relowner,"
+		"       Y.oid, Y.reltoastrelid, TY.indexrelid, Y.relowner"
+		"  FROM pg_catalog.pg_class X LEFT JOIN pg_catalog.pg_index TX"
+		"         ON X.reltoastrelid = TX.indrelid AND TX.indisvalid,"
+		"       pg_catalog.pg_class Y LEFT JOIN pg_catalog.pg_index TY"
+		"         ON Y.reltoastrelid = TY.indrelid AND TY.indisvalid"
 		" WHERE X.oid = $1"
 		"   AND Y.oid = ('reorg.table_' || X.oid)::regclass",
 		1, argtypes, values, nulls);

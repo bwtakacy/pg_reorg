@@ -109,7 +109,6 @@ SELECT * FROM tbl_with_dropped_toast;
 -- do reorg
 --
 \! pg_reorg --dbname=contrib_regression --no-order
-WARNING: skipping invalid index: CREATE UNIQUE INDEX idx_badindex_n ON tbl_badindex USING btree (n)
 INFO: ---- reorganize one table with 7 steps. ----
 INFO: target table name    : tbl_cluster
 INFO: ---- STEP1. setup ----
@@ -439,6 +438,7 @@ CREATE UNIQUE INDEX issue3_idx1 ON issue3 (col1, col2 DESC);
 CREATE UNIQUE INDEX issue3_idx2 ON issue3 (col1 DESC, col2 text_pattern_ops);
 CREATE UNIQUE INDEX issue3_idx3 ON issue3 (col1 DESC, col2 DESC);
 CREATE UNIQUE INDEX issue3_idx4 ON issue3 (col1 NULLS FIRST, col2 text_pattern_ops DESC NULLS LAST);
+CREATE UNIQUE INDEX issue3_idx5 ON issue3 (col1 DESC NULLS FIRST, col2 COLLATE "POSIX" DESC);
 SELECT reorg.get_order_by('issue3_idx1'::regclass::oid, 'issue3'::regclass::oid);
   get_order_by   
 -----------------
@@ -463,3 +463,14 @@ SELECT reorg.get_order_by('issue3_idx4'::regclass::oid, 'issue3'::regclass::oid)
  col1 NULLS FIRST, col2 DESC USING ~<~ NULLS LAST
 (1 row)
 
+SELECT reorg.get_order_by('issue3_idx5'::regclass::oid, 'issue3'::regclass::oid);
+             get_order_by             
+--------------------------------------
+ col1 DESC, col2 COLLATE "POSIX" DESC
+(1 row)
+
+--
+-- pg_reorg --all can skip databases where pg_reorg is not registered
+--
+\! pg_reorg --all -E FATAL | grep skipped | uniq
+ ... skipped
